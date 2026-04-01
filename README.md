@@ -3,23 +3,28 @@
 A simple, powerful, and multilingual RACI (Responsible, Accountable, Consulted, Informed) chart management tool.
 
 ## Key Features
-- **Interactive RACI Matrix**: Manage roles and tasks across project phases.
-- **Multilingual**: Supports Japanese, English, and Vietnamese.
-- **Persistence**: Automatically saves data to LocalStorage.
-- **CSV Support**: Import and export your RACI data easily.
-- **Modern UI**: Built with React and TypeScript for a smooth experience.
+- **Intuitive Interaction**: Toggle R/A/C/I with cell clicks, and edit task/phase/role names with double clicks.
+- **Multilingual Support**: Supports Japanese, English, and Vietnamese.
+- **Markdown Import/Export**: Copy or import your entire chart as a Markdown table—perfect for GitHub, wikis, and documentation.
+- **Auto-Save**: Automatically persists data to your browser's LocalStorage, so your work is safe across reloads.
+- **Modern UI/UX**: Built with React 18 and TypeScript for a smooth, lag-free experience.
 
 ## Tech Stack
-- React 18
-- Vite
-- TypeScript
-- Inline Styles
+- **Frontend**: React 18
+- **Tooling**: Vite
+- **Language**: TypeScript
+- **Styling**: Inline Styles
 
 ## Getting Started
-```bash
-npm install
-npm run dev
-```
+1. Install dependencies
+   ```bash
+   npm install
+   ```
+2. Start the development server
+   ```bash
+   npm run dev
+   ```
+3. Open `http://localhost:5173` in your browser
 
 ## License
 MIT
