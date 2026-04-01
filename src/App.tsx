@@ -46,7 +46,7 @@ function SmallBadge({ value }: SmallBadgeProps) {
 
 export default function RACIChart() {
   const [lang, setLang] = useState<Language>(() => (localStorage.getItem("raci_lang") as Language) || "ja");
-  useEffect(() => { localStorage.setItem("raci_lang", lang); }, [lang]);
+  useEffect(() => { localStorage.setItem("raci_lang", lang); document.title = t(lang, "appTitle"); }, [lang]);
 
   const [roles, setRoles] = useState<Role[]>(() => {
     const saved = localStorage.getItem("raci_roles");
