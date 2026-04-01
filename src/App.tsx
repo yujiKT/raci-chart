@@ -136,13 +136,19 @@ export default function RACIChart() {
   const [importText, setImportText] = useState<string>("");
   const [importError, setImportError] = useState<string>("");
 
-  const copyCSV = () => {
-    const header = [t(lang, "thPhase"), t(lang, "thTask"), ...roles.map(r => r.label)];
-    const rows = [header.join(",")];
-    phases.forEach(ph => ph.tasks.forEach(t => {
-      rows.push([`"${ph.name.replace(/"/g, '""')}"`, `"${t.name.replace(/"/g, '""')}"`, ...roles.map(r => t.raci[r.id] || "")].join(","));
-    }));
-    const text = rows.join("\n");
+  const copyMarkdown = () => {
+    let md = `# ${t(lang, "appTitle")}\n\n`;
+    phases.forEach(ph => {
+      md += `## ${ph.name}\n`;
+      const header = `| ${t(lang, "thTask")} | ${roles.map(r => r.label).join(" | ")} |`;
+      const sep = `| :--- | ${roles.map(() => ":---:").join(" | ")} |`;
+      md += `${header}\n${sep}\n`;
+      ph.tasks.forEach(tk => {
+        md += `| ${tk.name} | ${roles.map(r => tk.raci[r.id] || " ").join(" | ")} |\n`;
+      });
+      md += "\n";
+    });
+    const text = md.trim();
     const ta = document.createElement("textarea");
     ta.value = text;
     ta.style.position = "fixed";
@@ -159,78 +165,82 @@ export default function RACIChart() {
     }
   };
 
-  const parseCSVLine = (line: string): string[] => {
-    const result = [];
-    let current = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (inQuotes) {
-        if (ch === '"' && line[i + 1] === '"') { current += '"'; i++; }
-        else if (ch === '"') { inQuotes = false; }
-        else { current += ch; }
-      } else {
-        if (ch === '"') { inQuotes = true; }
-        else if (ch === ',') { result.push(current); current = ""; }
-        else { current += ch; }
+
+  const importMarkdown = () => {
+    setImportError("");
+    const lines = importText.split(/\r?\n/);
+    const newPhases: Phase[] = [];
+    let currentPhase: Phase | null = null;
+    let detectedRoles: string[] = [];
+    let isHeaderProcessed = false;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      if (trimmed.startsWith("## ")) {
+        const phName = trimmed.replace(/^##\s+/, "").trim();
+        currentPhase = { name: phName, color: PHASE_COLORS[newPhases.length % PHASE_COLORS.length], tasks: [] };
+        newPhases.push(currentPhase);
+        continue;
+      }
+
+      if (trimmed.startsWith("|") && trimmed.includes("|")) {
+        const cells = trimmed.split("|")
+          .map(s => s.trim())
+          .filter((_, i, arr) => i > 0 && i < arr.length - 1);
+
+        if (cells.length === 0) continue;
+        if (cells.every(c => c.includes("---"))) continue;
+
+        // すべてのテーブルのヘッダー行（"Task"など）を判定
+        const isHeaderRow = cells[0] === t(lang, "thTask") || cells[0].toLowerCase() === "task" || cells[0] === "タスク" || cells[0] === "Task";
+        
+        if (isHeaderRow) {
+          if (!isHeaderProcessed) {
+            detectedRoles = cells.slice(1);
+            isHeaderProcessed = true;
+          }
+          continue; // ヘッダー行は常にスキップ
+        }
+
+        if (currentPhase && cells.length > 0) {
+          const taskName = cells[0];
+          const raci: Record<string, RACIValue> = {};
+          detectedRoles.forEach((_, ri) => {
+            const val = (cells[ri + 1] || "").toUpperCase() as RACIValue;
+            raci["imp_" + ri] = ["R", "A", "C", "I"].includes(val) ? val : "";
+          });
+          currentPhase.tasks.push({ name: taskName, raci });
+        } else if (!currentPhase && cells.length > 0) {
+          currentPhase = { name: "Phase 1", color: PHASE_COLORS[0], tasks: [] };
+          newPhases.push(currentPhase);
+          const taskName = cells[0];
+          const raci: Record<string, RACIValue> = {};
+          detectedRoles.forEach((_, ri) => {
+            const val = (cells[ri + 1] || "").toUpperCase() as RACIValue;
+            raci["imp_" + ri] = ["R", "A", "C", "I"].includes(val) ? val : "";
+          });
+          currentPhase.tasks.push({ name: taskName, raci });
+        }
       }
     }
-    result.push(current);
-    return result;
-  };
 
-  const importCSV = () => {
-    setImportError("");
-    const lines = importText.trim().replace(/^\uFEFF/, "").split(/\r?\n/).filter(l => l.trim());
-    if (lines.length < 2) {
+    if (newPhases.length === 0 || (newPhases.length === 1 && newPhases[0].tasks.length === 0)) {
       const msg = t(lang, "importErrorNoRows");
       setImportError(msg);
       showToast(msg, "error", true);
       return;
     }
 
-    const headerCells = parseCSVLine(lines[0]);
-    if (headerCells.length < 3) {
-      const msg = t(lang, "importErrorInvalidHeader");
-      setImportError(msg);
-      showToast(msg, "error", true);
-      return;
-    }
-
-    const roleLabels = headerCells.slice(2);
-    const newRoles = roleLabels.map((label, i) => ({ id: "imp_" + i, label: label.trim() }));
-
-    const phaseMap = new Map();
-    for (let i = 1; i < lines.length; i++) {
-      const cells = parseCSVLine(lines[i]);
-      const phaseName = (cells[0] || "").trim();
-      const taskName = (cells[1] || "").trim();
-      if (!phaseName && !taskName) continue;
-      const raci: Record<string, RACIValue> = {};
-      newRoles.forEach((r, ri) => {
-        const val = (cells[ri + 2] || "").trim().toUpperCase() as RACIValue;
-        raci[r.id] = ["R", "A", "C", "I"].includes(val) ? val : "";
-      });
-      if (!phaseMap.has(phaseName)) {
-        phaseMap.set(phaseName, { name: phaseName, color: PHASE_COLORS[[...phaseMap.keys()].length % PHASE_COLORS.length], tasks: [] });
-      }
-      phaseMap.get(phaseName).tasks.push({ name: taskName, raci });
-    }
-
-    if (phaseMap.size === 0) {
-      const msg = t(lang, "importErrorNoData");
-      setImportError(msg);
-      showToast(msg, "error", true);
-      return;
-    }
-
+    const newRoles = detectedRoles.map((label, i) => ({ id: "imp_" + i, label: label || `Role ${i + 1}` }));
     setRoles(newRoles);
-    setPhases([...phaseMap.values()]);
+    setPhases(newPhases);
     setActivePhase(null);
     setHighlightRole(null);
     setImportModal(false);
     setImportText("");
-    showToast(t(lang, "toastImportSuccess", { p: phaseMap.size, t: lines.length - 1 }));
+    showToast(t(lang, "toastImportSuccess", { p: newPhases.length, t: newPhases.reduce((acc, p) => acc + p.tasks.length, 0) }));
   };
 
   const visiblePhases = activePhase !== null ? [phases[activePhase]] : phases;
@@ -312,7 +322,7 @@ export default function RACIChart() {
             {importError && <p style={{ fontSize: 12, color: "#dc2626", margin: 0, fontWeight: 500 }}>{importError}</p>}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button onClick={() => setImportModal(false)} style={{ padding: "8px 18px", borderRadius: 7, border: "1.5px solid #e2e8f0", background: "#fff", color: "#475569", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>{t(lang, "btnCancel")}</button>
-              <button onClick={importCSV} disabled={!importText.trim()} style={{ padding: "8px 18px", borderRadius: 7, border: "none", background: importText.trim() ? "#0f172a" : "#cbd5e1", color: "#fff", fontSize: 12, fontWeight: 600, cursor: importText.trim() ? "pointer" : "default" }}>{t(lang, "btnExecuteImport")}</button>
+              <button onClick={importMarkdown} disabled={!importText.trim()} style={{ padding: "8px 18px", borderRadius: 7, border: "none", background: importText.trim() ? "#0f172a" : "#cbd5e1", color: "#fff", fontSize: 12, fontWeight: 600, cursor: importText.trim() ? "pointer" : "default" }}>{t(lang, "btnExecuteImport")}</button>
             </div>
           </div>
         </div>
@@ -350,8 +360,8 @@ export default function RACIChart() {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><polyline points="8 11 12 15 16 11" /><path d="M20 21H4" /></svg>
               {t(lang, "btnImport")}
             </button>
-            <button onClick={copyCSV} style={{ padding: "7px 16px", borderRadius: 7, border: "none", background: "#0f172a", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2" /><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" /></svg>
+            <button onClick={copyMarkdown} style={{ padding: "7px 16px", borderRadius: 7, border: "none", background: "#0f172a", color: "#fff", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
               {t(lang, "btnCsvCopy")}
             </button>
             <select
